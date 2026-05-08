@@ -1,0 +1,11 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+slack-bolt==1.22.0
+slack-sdk==3.34.0
+llama-index==0.12.5
+llama-index-readers-notion==0.3.3
+qdrant-client==1.13.3
+httpx==0.28.1
+apscheduler==3.11.0
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
