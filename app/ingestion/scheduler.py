@@ -10,8 +10,10 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import settings
-from app.ingestion.notion_ingestor import ingest_notion
 from app.ingestion.slack_ingestor import ingest_slack
+
+# Notion import kept for future use
+# from app.ingestion.notion_ingestor import ingest_notion
 
 logger = logging.getLogger(__name__)
 
@@ -28,22 +30,17 @@ async def _run_all_ingestors() -> None:
     except Exception:
         logger.error("Slack ingestion failed", exc_info=True)
 
-    try:
-        notion_count = await ingest_notion()
-        logger.info("Notion ingestion complete: %d chunks upserted", notion_count)
-    except Exception:
-        logger.error("Notion ingestion failed", exc_info=True)
+    # TODO: enable when Notion credentials are ready
+    # try:
+    #     notion_count = await ingest_notion()
+    #     logger.info("Notion ingestion complete: %d chunks upserted", notion_count)
+    # except Exception:
+    #     logger.error("Notion ingestion failed", exc_info=True)
 
     logger.info("── Ingestion cycle finished ──")
 
 
 def start_scheduler() -> AsyncIOScheduler:
-    """
-    Create and start the APScheduler scheduler.
-
-    Registers both ingestors to run at the configured interval.
-    The scheduler is returned so it can be shut down on app teardown.
-    """
     global _scheduler
 
     _scheduler = AsyncIOScheduler()
@@ -67,7 +64,6 @@ def start_scheduler() -> AsyncIOScheduler:
 
 
 def stop_scheduler() -> None:
-    """Gracefully shut down the scheduler."""
     global _scheduler
     if _scheduler and _scheduler.running:
         _scheduler.shutdown(wait=False)
@@ -76,6 +72,5 @@ def stop_scheduler() -> None:
 
 
 async def run_initial_ingestion() -> None:
-    """Run all ingestors once (called on app startup)."""
     logger.info("Running initial ingestion on startup...")
     await _run_all_ingestors()

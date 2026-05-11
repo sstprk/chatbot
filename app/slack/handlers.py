@@ -32,7 +32,6 @@ def register_handlers(app: AsyncApp) -> None:
             await say(
                 text="Hey! Ask me a question and I'll search our knowledge base. 🔍",
                 channel=channel,
-                thread_ts=thread_ts,
             )
             return
 
@@ -48,13 +47,12 @@ def register_handlers(app: AsyncApp) -> None:
 
         try:
             answer = await pipeline.query(user_message)
-            await say(text=answer, channel=channel, thread_ts=thread_ts)
+            await say(text=answer, channel=channel)
         except Exception:
             logger.error("Error processing app_mention", exc_info=True)
             await say(
                 text="⚠️ Sorry, something went wrong while processing your question. Please try again.",
                 channel=channel,
-                thread_ts=thread_ts,
             )
         finally:
             # Remove the "thinking" reaction

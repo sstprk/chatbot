@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   ollama:
     image: ollama/ollama:latest
@@ -10,12 +8,6 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - chatbot-net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -27,12 +19,6 @@ services:
       - qdrant_data:/qdrant/storage
     networks:
       - chatbot-net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:6333/healthz || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
 
   app:
     build:
@@ -46,12 +32,11 @@ services:
     volumes:
       - ./data:/app/data
     depends_on:
-      ollama:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
+      - ollama
+      - qdrant
     networks:
       - chatbot-net
+    restart: on-failure
 
 networks:
   chatbot-net:
