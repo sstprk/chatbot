@@ -1,11 +1,7 @@
-# Replace yourdomain.com with your actual domain.
-# Caddy will automatically provision HTTPS via Let's Encrypt.
-
-yourdomain.com {
-    reverse_proxy app:8000
+your-slack-domain.com {
+    reverse_proxy slack-bot:3000
 
     header {
-        # Security headers
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
         Referrer-Policy strict-origin-when-cross-origin

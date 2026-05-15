@@ -1,94 +1,87 @@
-"""
-FastAPI entrypoint.
-
-- Mounts Slack Bolt at /slack/events
-- Health check at /health
-- Starts ingestion scheduler on startup
-- Ensures Qdrant collection exists on startup
-"""
-
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from slack_bolt.adapter.starlette.async_handler import AsyncSlackRequestHandler
 
+from app.bot import build_bolt_app, set_client
+from app.client import MnemoClient
 from app.config import settings
-from app.ingestion.scheduler import run_initial_ingestion, start_scheduler, stop_scheduler
-from app.rag.qdrant_store import ensure_collection
-from app.slack.bot import slack_handler
 
-# ── Logging ──────────────────────────────────────────────────────────
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
 
-# ── Lifespan ─────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown logic."""
-    logger.info("Starting Company Chatbot...")
+    logger.info("Starting %s Slack Bot: target=%s", settings.bot_name, settings.container_url)
 
-    # Ensure Qdrant collection exists
-    await ensure_collection()
+    bolt_app = build_bolt_app()
 
-    # Start the ingestion scheduler
-    scheduler = start_scheduler()
+    mnemo_client = MnemoClient(
+        base_url=settings.container_url,
+        api_key=settings.user_api_key,
+        timeout=settings.query_timeout,
+    )
+    set_client(mnemo_client)
 
-    # Run initial ingestion in the background (don't block startup)
-    asyncio.create_task(run_initial_ingestion())
+    reachable = await mnemo_client.health()
+    if reachable:
+        logger.info("user_container_reachable url=%s", settings.container_url)
+    else:
+        logger.warning("user_container_unreachable url=%s — bot will start anyway", settings.container_url)
 
-    logger.info("Company Chatbot is ready ✓")
+    app.state.bolt = bolt_app
+    app.state.handler = AsyncSlackRequestHandler(bolt_app)
+    app.state.mnemo_client = mnemo_client
+
+    logger.info("%s Slack Bot ready: port=%d target=%s", settings.bot_name, settings.app_port, settings.container_url)
     yield
 
-    # Shutdown
-    stop_scheduler()
-    logger.info("Company Chatbot shut down")
+    await mnemo_client.close()
+    logger.info("%s Slack Bot shut down", settings.bot_name)
 
 
-# ── FastAPI app ──────────────────────────────────────────────────────
 app = FastAPI(
-    title="Company Chatbot",
-    description="Internal RAG-powered chatbot with Slack integration",
-    version="1.0.0",
+    title="Mnemo Slack Bot",
+    description=(
+        "Slack-facing interface for the Mnemo knowledge infrastructure platform. "
+        "Forwards Slack messages to a Mnemo user container and returns responses. "
+        "No AI, no vector DB — pure message relay."
+    ),
+    version="0.1.0",
     lifespan=lifespan,
 )
 
 
-# ── Health check ─────────────────────────────────────────────────────
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "ok",
-        "model": settings.ollama_model,
-        "embed_model": settings.ollama_embed_model,
-        "collection": settings.qdrant_collection,
-    }
-
-
-# ── Slack event endpoints ────────────────────────────────────────────
 @app.post("/slack/events")
 async def slack_events(request: Request):
-    """Handle incoming Slack events (mentions, DMs, challenges)."""
-    return await slack_handler.handle(request)
+    return await request.app.state.handler.handle(request)
 
 
 @app.post("/slack/interactions")
 async def slack_interactions(request: Request):
-    """Handle Slack interactive components (buttons, modals, etc.)."""
-    return await slack_handler.handle(request)
+    return await request.app.state.handler.handle(request)
 
 
-# ── Global error handler ─────────────────────────────────────────────
+@app.get("/health")
+async def health(request: Request):
+    reachable = await request.app.state.mnemo_client.health()
+    return {
+        "status": "ok",
+        "container_url": settings.container_url,
+        "container_reachable": reachable,
+        "bot_name": settings.bot_name,
+    }
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch-all error handler to prevent 500s from leaking stack traces."""
     logger.error("Unhandled exception: %s", exc, exc_info=True)
     return JSONResponse(
         status_code=500,

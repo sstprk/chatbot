@@ -1,29 +1,21 @@
-
 services:
-  ollama:
-    restart: always
-
-  qdrant:
-    restart: always
-
-  app:
+  slack-bot:
     restart: always
 
   caddy:
     image: caddy:2-alpine
-    container_name: caddy
-    restart: always
+    container_name: mnemo-slack-caddy
     ports:
       - "80:80"
       - "443:443"
+      - "443:443/udp"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      - app
     networks:
-      - chatbot-net
+      - mnemo-net
+    restart: always
 
 volumes:
   caddy_data:

@@ -13,7 +13,6 @@ build
 .vscode
 .idea
 data/
-scripts/
 caddy/
 docker-compose*.yml
 Dockerfile
