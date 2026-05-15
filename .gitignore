@@ -1,4 +1,3 @@
-# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -7,27 +6,18 @@ build/
 .eggs/
 *.egg
 
-# Virtual environments
 .venv/
 venv/
 env/
 
-# Environment variables
 .env
 
-# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS
 .DS_Store
 Thumbs.db
 
-# Application data
 data/
-
-# Docker volumes (local)
-ollama_data/
-qdrant_data/

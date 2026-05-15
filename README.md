@@ -1,172 +1,138 @@
-# Company Chatbot
+# Mnemo Slack Bot
 
-An internal RAG-powered chatbot that ingests knowledge from **Slack channels** and **Notion pages**, stores it in a vector database, and answers employee questions via Slack @mentions or DMs.
-
-## Architecture
+Slack-facing relay for the Mnemo knowledge infrastructure platform. This container has no AI, no vector DB, no embedding model — it forwards every Slack message to a Mnemo user container's `/query` endpoint and returns the response.
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Slack API   │────▶│   FastAPI     │────▶│   Ollama     │
-│  (events)    │◀────│  + Slack Bolt │◀────│  qwen2.5:3b  │
-└──────────────┘     └──────┬───────┘     └──────────────┘
-                           │
-                    ┌──────┴───────┐
-                    │   Qdrant     │
-                    │ (vector DB)  │
-                    └──────────────┘
-                           ▲
-              ┌────────────┴────────────┐
-              │      APScheduler        │
-              │  ┌─────────┬──────────┐ │
-              │  │  Slack   │  Notion  │ │
-              │  │ Ingestor │ Ingestor │ │
-              │  └─────────┴──────────┘ │
-              └─────────────────────────┘
+Slack  →  mnemo-slack  →  User Container /query  →  Slack
 ```
 
-## Stack
+## Prerequisites
 
-| Component     | Technology                           |
-|---------------|--------------------------------------|
-| LLM           | Ollama — `qwen2.5:3b`               |
-| Embeddings    | Ollama — `nomic-embed-text` (768d)   |
-| Vector DB     | Qdrant (cosine similarity)           |
-| Orchestration | LlamaIndex (chunking + Notion reader)|
-| App Framework | FastAPI + Slack Bolt (HTTP mode)      |
-| Scheduler     | APScheduler (AsyncIO)                |
-| Reverse Proxy | Caddy (auto HTTPS, production only)  |
-| Containers    | Docker + Docker Compose              |
+- A running **Mnemo user container** (from the mnemo-container repo) reachable on the `mnemo-net` Docker network
+- A **Slack app** configured with the scopes and events listed below
+- An **HTTPS endpoint** (required by Slack Events API) — use Caddy, ngrok, or Socket Mode for dev
 
----
+## Slack App Configuration
 
-## Quick Start (Local Development)
+### Required OAuth Scopes
 
-### 1. Clone and configure
+| Scope | Purpose |
+|---|---|
+| `app_mentions:read` | Receive @mention events |
+| `chat:write` | Send messages |
+| `im:history` | Read DM history |
+| `im:write` | Send DMs |
+| `reactions:write` | Add/remove thinking indicator |
+| `users:read` | Resolve user names |
+| `app_home:read` | Display App Home tab |
+
+### Required Event Subscriptions
+
+| Event | Purpose |
+|---|---|
+| `app_mention` | Respond to @mentions in channels |
+| `message.im` | Respond to direct messages |
+| `app_home_opened` | Display welcome in App Home |
+
+## Quick Start
 
 ```bash
+# 1. Clone
+git clone https://github.com/sstprk/mnemo-slack.git
+cd mnemo-slack
+
+# 2. Configure
 cp .env.example .env
-# Edit .env with your Slack and Notion credentials
-```
+# Fill in SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, and CONTAINER_URL
 
-### 2. Start services
+# 3. Create the shared network (if not already created)
+docker network create mnemo-net
 
-```bash
+# 4. Start
 docker compose up -d --build
+
+# 5. Set Slack Request URL
+# In your Slack app settings → Event Subscriptions → Request URL:
+# https://your-domain.com/slack/events
+
+# 6. Test
+# @mention the bot in any channel it's in
 ```
 
-### 3. Pull the models
+## Socket Mode vs HTTP Mode
+
+| | Socket Mode | HTTP Mode |
+|---|---|---|
+| When to use | Local dev, no HTTPS | Production |
+| Config | Set `SLACK_APP_TOKEN=xapp-...` | Leave `SLACK_APP_TOKEN` empty |
+| HTTPS required | No | Yes |
+| How it works | Bot opens WebSocket to Slack | Slack POSTs to your URL |
+
+**If `SLACK_APP_TOKEN` is set, Socket Mode takes priority over HTTP mode.** To enable Socket Mode, generate an app-level token in your Slack app under *Settings → Basic Information → App-Level Tokens* with the `connections:write` scope.
+
+## Pointing to a Different User Container
+
+Change one environment variable:
 
 ```bash
-docker exec ollama ollama pull qwen2.5:3b
-docker exec ollama ollama pull nomic-embed-text
+CONTAINER_URL=http://other-container:8000
 ```
 
-### 4. Verify
-
-```bash
-curl http://localhost:8000/health
-# → {"status":"ok","model":"qwen2.5:3b","embed_model":"nomic-embed-text","collection":"company_knowledge"}
-```
-
-### 5. Configure Slack
-
-In your Slack App settings:
-
-1. **Event Subscriptions** → Request URL: `https://yourdomain.com/slack/events`
-2. **Subscribe to bot events**: `app_mention`, `message.im`
-3. **OAuth Scopes**: `app_mentions:read`, `chat:write`, `channels:history`, `channels:read`, `users:read`, `reactions:write`, `im:history`
-
----
-
-## Production Deployment (AWS EC2)
-
-### 1. Provision EC2
-
-- Amazon Linux 2023, `t3.xlarge` or larger (Ollama needs RAM)
-- Open ports: 22, 80, 443
-- Attach an Elastic IP
-- Point your domain's DNS A record to the Elastic IP
-
-### 2. Bootstrap the instance
-
-```bash
-ssh ec2-user@your-ec2-ip 'bash -s' < scripts/setup_ec2.sh
-```
-
-### 3. Deploy
-
-```bash
-export EC2_HOST=ec2-user@your-ec2-ip
-./scripts/deploy.sh
-```
-
-### 4. Update Caddyfile
-
-Edit `caddy/Caddyfile` and replace `yourdomain.com` with your actual domain before deploying.
-
----
+No code changes needed. The bot will forward all queries to the new target.
 
 ## Environment Variables
 
-| Variable                     | Description                              | Default              |
-|------------------------------|------------------------------------------|----------------------|
-| `SLACK_BOT_TOKEN`            | Slack Bot OAuth token (`xoxb-...`)       | —                    |
-| `SLACK_SIGNING_SECRET`       | Slack app signing secret                 | —                    |
-| `SLACK_CHANNELS_TO_INGEST`   | Comma-separated channel names            | `""`                 |
-| `NOTION_INTEGRATION_TOKEN`   | Notion integration token                 | `""`                 |
-| `NOTION_PAGE_IDS`            | Comma-separated Notion page IDs          | `""`                 |
-| `OLLAMA_BASE_URL`            | Ollama API base URL                      | `http://ollama:11434`|
-| `OLLAMA_MODEL`               | LLM model name                           | `qwen2.5:3b`        |
-| `OLLAMA_EMBED_MODEL`         | Embedding model name                     | `nomic-embed-text`   |
-| `QDRANT_URL`                 | Qdrant server URL                        | `http://qdrant:6333` |
-| `QDRANT_COLLECTION`          | Qdrant collection name                   | `company_knowledge`  |
-| `INGESTION_INTERVAL_MINUTES` | How often to re-ingest (minutes)         | `60`                 |
-| `APP_HOST`                   | FastAPI bind host                        | `0.0.0.0`           |
-| `APP_PORT`                   | FastAPI bind port                        | `8000`               |
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `SLACK_BOT_TOKEN` | Yes | — | Bot User OAuth Token (`xoxb-...`) |
+| `SLACK_SIGNING_SECRET` | Yes | — | From Basic Information → App Credentials |
+| `SLACK_APP_TOKEN` | No | `""` | App-Level Token (`xapp-...`) for Socket Mode |
+| `CONTAINER_URL` | No | `http://mnemo-chatbot:8000` | User container URL |
+| `USER_API_KEY` | No | `""` | API key sent as `X-Api-Key` header |
+| `BOT_NAME` | No | `Mnemo` | Display name in error messages and App Home |
+| `QUERY_TIMEOUT` | No | `120.0` | Seconds to wait for user container response |
+| `SHOW_SOURCES` | No | `true` | Append source citations to responses |
+| `SHOW_PROVENANCE` | No | `false` | Append cache hit stats to responses |
+| `TYPING_EMOJI` | No | `hourglass_flowing_sand` | Emoji for thinking indicator |
+| `ERROR_MESSAGE` | No | `Sorry, I couldn't process...` | User-facing error message |
+| `APP_HOST` | No | `0.0.0.0` | FastAPI bind host |
+| `APP_PORT` | No | `3000` | FastAPI bind port |
+| `LOG_LEVEL` | No | `INFO` | Python log level |
 
----
+## Mnemo Master Registry
+
+This container does **not** register itself with the Mnemo master. It is a Slack client, not a knowledge container. The user container it points to is what appears in the registry.
+
+## HTTPS Setup with Caddy
+
+For production, Slack requires HTTPS for Event Subscriptions.
+
+1. Edit `caddy/Caddyfile` — replace `your-slack-domain.com` with your domain
+2. Point your domain's DNS A record to your server
+3. Deploy with the prod overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+Caddy auto-provisions TLS via Let's Encrypt. If your master container already runs Caddy, add the slack domain to the existing Caddyfile instead of running a second instance.
 
 ## Project Structure
 
 ```
-company-chatbot/
-├── docker-compose.yml          # Local dev: Ollama + Qdrant + App
-├── docker-compose.prod.yml     # Production overlay: adds Caddy HTTPS
-├── Dockerfile                  # Python 3.11-slim app container
-├── .env.example                # Template environment variables
-├── requirements.txt            # Pinned Python dependencies
+mnemo-slack/
+├── Dockerfile
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── .env.example
+├── .gitignore
+├── README.md
+├── requirements.txt
 ├── caddy/
-│   └── Caddyfile               # Reverse proxy with auto HTTPS
-├── scripts/
-│   ├── setup_ec2.sh            # Bootstrap Amazon Linux 2023
-│   └── deploy.sh               # Deploy to EC2 via SSH
+│   └── Caddyfile
 └── app/
-    ├── main.py                 # FastAPI entrypoint + Slack mount
-    ├── config.py               # pydantic-settings configuration
-    ├── rag/
-    │   ├── pipeline.py         # RAG: embed → retrieve → generate
-    │   ├── embeddings.py       # Ollama /api/embed wrapper
-    │   └── qdrant_store.py     # Qdrant collection + upsert + search
-    ├── ingestion/
-    │   ├── scheduler.py        # APScheduler: periodic ingestion
-    │   ├── slack_ingestor.py   # Slack channel history ingestor
-    │   └── notion_ingestor.py  # Notion page ingestor
-    └── slack/
-        ├── bot.py              # Slack Bolt app (HTTP mode)
-        └── handlers.py         # @mention + DM event handlers
+    ├── main.py       # FastAPI entrypoint + Slack Bolt setup
+    ├── config.py     # pydantic-settings configuration
+    ├── bot.py        # Slack event handlers (mention, DM, App Home)
+    └── client.py     # HTTP client for user container /query calls
 ```
-
----
-
-## How It Works
-
-1. **Ingestion** — On startup (and every N minutes), APScheduler runs the Slack and Notion ingestors. They pull new content, chunk it, embed via `nomic-embed-text`, and upsert into Qdrant.
-
-2. **Query** — When a user @mentions the bot or sends a DM, the handler calls the RAG pipeline:
-   - Embeds the question
-   - Retrieves top-5 relevant chunks from Qdrant
-   - Builds a context-enriched prompt
-   - Generates an answer via `qwen2.5:3b`
-   - Appends source citations (channel name, page title)
-
-3. **Response** — The answer is posted back to Slack in the same thread, with source attributions formatted as Slack mrkdwn.

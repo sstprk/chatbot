@@ -1,54 +1,34 @@
-"""
-Application configuration via pydantic-settings.
-All values are loaded from environment variables / .env file.
-"""
+import logging
 
 from pydantic_settings import BaseSettings
 
+logger = logging.getLogger(__name__)
+
 
 class Settings(BaseSettings):
-    # ── Slack ────────────────────────────────────────────────────────
+    # ── Slack ────────────────────────────────────────────────────
     slack_bot_token: str
     slack_signing_secret: str
-    slack_channels_to_ingest: str = ""  # comma-separated channel names
+    slack_app_token: str = ""
 
-    # ── Notion ───────────────────────────────────────────────────────
-    notion_integration_token: str = ""
-    notion_page_ids: str = ""  # comma-separated page IDs
+    # ── User Container ───────────────────────────────────────────
+    container_url: str = "http://mnemo-chatbot:8000"
+    user_api_key: str = ""
 
-    # ── Ollama ───────────────────────────────────────────────────────
-    ollama_base_url: str = "http://ollama:11434"
-    ollama_model: str = "qwen2.5:3b"
-    ollama_embed_model: str = "nomic-embed-text"
+    # ── Bot behaviour ────────────────────────────────────────────
+    bot_name: str = "Mnemo"
+    query_timeout: float = 120.0
+    show_sources: bool = True
+    show_provenance: bool = False
+    typing_emoji: str = "hourglass_flowing_sand"
+    error_message: str = "Sorry, I couldn't process your request. Please try again."
 
-    # ── Qdrant ───────────────────────────────────────────────────────
-    qdrant_url: str = "http://qdrant:6333"
-    qdrant_collection: str = "company_knowledge"
-
-    # ── Ingestion ────────────────────────────────────────────────────
-    ingestion_interval_minutes: int = 60
-
-    # ── App ──────────────────────────────────────────────────────────
+    # ── App ──────────────────────────────────────────────────────
     app_host: str = "0.0.0.0"
-    app_port: int = 8000
-
-    # ── Helpers ──────────────────────────────────────────────────────
-    @property
-    def slack_channels_list(self) -> list[str]:
-        """Return list of Slack channels to ingest."""
-        if not self.slack_channels_to_ingest:
-            return []
-        return [ch.strip() for ch in self.slack_channels_to_ingest.split(",") if ch.strip()]
-
-    @property
-    def notion_page_ids_list(self) -> list[str]:
-        """Return list of Notion page IDs to ingest."""
-        if not self.notion_page_ids:
-            return []
-        return [pid.strip() for pid in self.notion_page_ids.split(",") if pid.strip()]
+    app_port: int = 3000
+    log_level: str = "INFO"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
-# Singleton settings instance
 settings = Settings()

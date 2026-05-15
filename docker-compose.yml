@@ -1,47 +1,15 @@
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
+  slack-bot:
+    build: .
+    container_name: mnemo-slack-bot
     ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
+      - "3000:3000"
+    env_file: .env
     networks:
-      - chatbot-net
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: qdrant
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
-    networks:
-      - chatbot-net
-
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: chatbot-app
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    volumes:
-      - ./data:/app/data
-    depends_on:
-      - ollama
-      - qdrant
-    networks:
-      - chatbot-net
+      - mnemo-net
     restart: on-failure
 
 networks:
-  chatbot-net:
-    driver: bridge
-
-volumes:
-  ollama_data:
-  qdrant_data:
+  mnemo-net:
+    external: true
+    name: mnemo-net
