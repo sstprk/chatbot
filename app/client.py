@@ -24,15 +24,19 @@ class MnemoClient:
     async def query(
         self,
         text: str,
-        system_prompt: str | None = None,
         include_provenance: bool = False,
     ) -> dict:
-        body: dict = {
+        """
+        POST {container_url}/query
+        Sends plain text query to Mnemo user container.
+        Returns dict with "chunks" list and optional "provenance".
+        On any error returns {"error": str, "chunks": []}
+        Never raises.
+        """
+        body = {
             "query": text,
             "include_provenance": include_provenance,
         }
-        if system_prompt:
-            body["system_prompt"] = system_prompt
         try:
             r = await self._client.post(
                 f"{self._url}/query",
@@ -42,18 +46,16 @@ class MnemoClient:
             r.raise_for_status()
             return r.json()
         except httpx.TimeoutException:
-            logger.error("query_timeout url=%s", self._url)
-            return {"error": "timeout", "answer": None}
+            logger.error("mnemo_query_timeout url=%s", self._url)
+            return {"error": "timeout", "chunks": []}
         except httpx.HTTPStatusError as e:
             logger.error(
-                "query_http_error status=%d url=%s",
-                e.response.status_code,
-                self._url,
+                "mnemo_query_http_error status=%d", e.response.status_code
             )
-            return {"error": f"http_{e.response.status_code}", "answer": None}
+            return {"error": f"http_{e.response.status_code}", "chunks": []}
         except Exception as e:
-            logger.error("query_error error=%s", e)
-            return {"error": str(e), "answer": None}
+            logger.error("mnemo_query_error error=%s", e)
+            return {"error": str(e), "chunks": []}
 
     async def health(self) -> bool:
         try:
@@ -69,42 +71,97 @@ class MnemoClient:
         await self._client.aclose()
 
 
-def format_response(data: dict, settings) -> str:
-    if "error" in data and data["error"]:
+async def generate_answer(
+    chunks: list[dict],
+    query: str,
+    settings,
+) -> str:
+    """
+    Build a prompt from retrieved chunks and call Ollama to generate
+    an answer. This is the chatbot's own LLM — not part of Mnemo.
+
+    Returns the generated answer string.
+    On error returns settings.error_message.
+    """
+    if not chunks:
+        return (
+            "I couldn't find any relevant information in the "
+            "knowledge base for your question."
+        )
+
+    # Build numbered context block from chunks
+    context_parts = []
+    for i, chunk in enumerate(chunks, 1):
+        source = chunk.get("source", "unknown")
+        channel = chunk.get("channel", "")
+        title = chunk.get("doc_title", "")
+        label = f"#{channel}" if channel else title or source
+        context_parts.append(
+            f"[{i}] Source: {label}\n{chunk.get('text', '')}"
+        )
+    context = "\n\n".join(context_parts)
+
+    prompt = (
+        f"{settings.system_prompt}\n\n"
+        f"── Retrieved Context ──\n{context}\n\n"
+        f"── Question ──\n{query}\n\n"
+        f"Answer:"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
+            r = await client.post(
+                f"{settings.ollama_url}/api/generate",
+                json={
+                    "model": settings.ollama_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": settings.llm_temperature,
+                        "num_predict": settings.llm_max_tokens,
+                    },
+                },
+            )
+            r.raise_for_status()
+            return r.json().get("response", "").strip()
+    except httpx.TimeoutException:
+        logger.error("ollama_timeout url=%s", settings.ollama_url)
+        return settings.error_message
+    except Exception as e:
+        logger.error("ollama_error error=%s", e)
         return settings.error_message
 
-    answer = data.get("answer") or settings.error_message
-    parts = [answer]
 
-    if settings.show_sources:
-        sources = data.get("sources") or []
-        if sources:
-            seen: set[str] = set()
-            lines: list[str] = []
-            for src in sources:
-                src_type = src.get("source_type", "unknown")
-                if src_type == "slack":
-                    key = f"slack:{src.get('channel', '')}"
-                    label = f"Slack > #{src.get('channel', 'unknown')}"
-                elif src_type == "notion":
-                    key = f"notion:{src.get('doc_title', '')}"
-                    label = f"Notion > {src.get('doc_title', 'untitled')}"
-                else:
-                    key = f"{src_type}:{src.get('title', src.get('id', ''))}"
-                    label = f"{src_type} > {src.get('title', 'unknown')}"
-                if key not in seen:
-                    seen.add(key)
-                    lines.append(f"• {label}")
-                if len(lines) >= 5:
-                    break
-            if lines:
-                parts.append("\n\n:books: *Sources:*\n" + "\n".join(lines))
+def format_sources(chunks: list[dict], settings) -> str:
+    """
+    Build a Slack mrkdwn source citation block from chunks.
+    Deduplicates by source key. Max 5 sources.
+    Returns empty string if show_sources=False or no chunks.
+    """
+    if not settings.show_sources or not chunks:
+        return ""
 
-    if settings.show_provenance:
-        prov = data.get("provenance")
-        if prov:
-            cache_hits = prov.get("cache_hits", 0)
-            total = prov.get("total_retrieved", prov.get("global_hits", 0))
-            parts.append(f"\n\n:bar_chart: Cache: {cache_hits} hits / {total} retrieved")
+    seen: set[str] = set()
+    lines: list[str] = []
+    for chunk in chunks:
+        source = chunk.get("source", "unknown")
+        channel = chunk.get("channel", "")
+        title = chunk.get("doc_title", "")
+        if source == "slack" and channel:
+            key = f"slack:#{channel}"
+            label = f"Slack › #{channel}"
+        elif source == "notion" and title:
+            key = f"notion:{title}"
+            label = f"Notion › {title}"
+        else:
+            key = f"{source}:{title or 'unknown'}"
+            label = f"{source.capitalize()} › {title or 'unknown'}"
+        if key not in seen:
+            seen.add(key)
+            lines.append(f"• {label}")
+        if len(lines) >= 5:
+            break
 
-    return "".join(parts)
+    if not lines:
+        return ""
+    return "\n📚 *Sources:*\n" + "\n".join(lines)

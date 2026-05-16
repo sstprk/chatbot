@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from slack_bolt.async_app import AsyncApp
 
-from app.client import MnemoClient, format_response
+from app.client import MnemoClient, format_sources, generate_answer
 from app.config import settings
 
 if TYPE_CHECKING:
@@ -67,7 +67,21 @@ def build_bolt_app() -> AsyncApp:
             text=query,
             include_provenance=settings.show_provenance,
         )
-        answer = format_response(result, settings)
+
+        if result.get("error"):
+            answer = settings.error_message
+        else:
+            chunks = result.get("chunks", [])
+            answer = await generate_answer(chunks, query, settings)
+            sources = format_sources(chunks, settings)
+            answer = answer + sources
+
+            if settings.show_provenance and result.get("provenance"):
+                prov = result["provenance"]
+                answer += (
+                    f"\n\n📊 _{prov.get('cache_hits', 0)} cached · "
+                    f"{prov.get('global_hits', 0)} from knowledge base_"
+                )
 
         try:
             await client.reactions_remove(
@@ -102,7 +116,22 @@ def build_bolt_app() -> AsyncApp:
             text=query,
             include_provenance=settings.show_provenance,
         )
-        answer = format_response(result, settings)
+
+        if result.get("error"):
+            answer = settings.error_message
+        else:
+            chunks = result.get("chunks", [])
+            answer = await generate_answer(chunks, query, settings)
+            sources = format_sources(chunks, settings)
+            answer = answer + sources
+
+            if settings.show_provenance and result.get("provenance"):
+                prov = result["provenance"]
+                answer += (
+                    f"\n\n📊 _{prov.get('cache_hits', 0)} cached · "
+                    f"{prov.get('global_hits', 0)} from knowledge base_"
+                )
+
         await say(answer)
 
     @bolt.event("app_home_opened")
