@@ -1,14 +1,26 @@
 # Mnemo Slack Bot
 
-Slack-facing relay for the Mnemo knowledge infrastructure platform. This container has no AI, no vector DB, no embedding model — it forwards every Slack message to a Mnemo user container's `/query` endpoint and returns the response.
+A Slack chatbot that uses **Mnemo** for knowledge retrieval and its own **Ollama** instance for answer generation. Mnemo returns relevant document chunks; this bot turns them into readable answers.
+
+## Architecture
 
 ```
-Slack  →  mnemo-slack  →  User Container /query  →  Slack
+Slack  →  mnemo-slack  →  Mnemo user container /query  →  (chunks returned)
+                       →  Ollama /api/generate          →  (answer generated)
+                       →  Slack
 ```
+
+1. Slack message arrives
+2. Raw query is sent to the Mnemo user container (`POST /query`)
+3. Mnemo returns a list of document chunks (no answer — just data)
+4. This bot builds a prompt from the chunks and calls its local Ollama
+5. Ollama generates a human-readable answer
+6. Answer (+ source citations) is posted back to Slack
 
 ## Prerequisites
 
-- A running **Mnemo user container** (from the mnemo-container repo) reachable on the `mnemo-net` Docker network
+- A running **Mnemo user container** (from the `mnemo-container` repo) reachable on the `mnemo-net` Docker network
+- An **Ollama** instance reachable on `mnemo-net` with the target model pulled
 - A **Slack app** configured with the scopes and events listed below
 - An **HTTPS endpoint** (required by Slack Events API) — use Caddy, ngrok, or Socket Mode for dev
 
@@ -43,10 +55,10 @@ cd mnemo-slack
 
 # 2. Configure
 cp .env.example .env
-# Fill in SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, and CONTAINER_URL
+# Fill in SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, CONTAINER_URL, OLLAMA_URL
 
-# 3. Create the shared network (if not already created)
-docker network create mnemo-net
+# 3. Pull the LLM model on your Ollama instance
+docker exec mnemo-ollama ollama pull qwen2.5:3b
 
 # 4. Start
 docker compose up -d --build
@@ -70,15 +82,21 @@ docker compose up -d --build
 
 **If `SLACK_APP_TOKEN` is set, Socket Mode takes priority over HTTP mode.** To enable Socket Mode, generate an app-level token in your Slack app under *Settings → Basic Information → App-Level Tokens* with the `connections:write` scope.
 
-## Pointing to a Different User Container
+## Bring Your Own LLM
 
-Change one environment variable:
+This chatbot uses Ollama for answer generation. **Mnemo provides the retrieval** — the chunks, the sources, the lifecycle tracking. **This container provides the AI** that turns those chunks into a readable answer.
 
-```bash
-CONTAINER_URL=http://other-container:8000
+The two services are fully decoupled:
+- Change `CONTAINER_URL` to point to a different Mnemo user container
+- Change `OLLAMA_URL` and `OLLAMA_MODEL` to use a different model
+
+To use a different LLM provider entirely (OpenAI, Anthropic, etc.), replace the `generate_answer()` function in `app/client.py`. The function signature is:
+
+```python
+async def generate_answer(chunks: list[dict], query: str, settings) -> str:
 ```
 
-No code changes needed. The bot will forward all queries to the new target.
+It receives the raw chunks from Mnemo, the original query string, and the settings object. It must return a plain string.
 
 ## Environment Variables
 
@@ -87,10 +105,16 @@ No code changes needed. The bot will forward all queries to the new target.
 | `SLACK_BOT_TOKEN` | Yes | — | Bot User OAuth Token (`xoxb-...`) |
 | `SLACK_SIGNING_SECRET` | Yes | — | From Basic Information → App Credentials |
 | `SLACK_APP_TOKEN` | No | `""` | App-Level Token (`xapp-...`) for Socket Mode |
-| `CONTAINER_URL` | No | `http://mnemo-chatbot:8000` | User container URL |
-| `USER_API_KEY` | No | `""` | API key sent as `X-Api-Key` header |
+| `CONTAINER_URL` | No | `http://mnemo-chatbot:8000` | Mnemo user container URL |
+| `USER_API_KEY` | No | `""` | API key sent as `X-Api-Key` to Mnemo |
+| `OLLAMA_URL` | No | `http://mnemo-ollama:11434` | Ollama instance URL |
+| `OLLAMA_MODEL` | No | `qwen2.5:3b` | Model for answer generation |
+| `LLM_TIMEOUT` | No | `120.0` | Seconds to wait for Ollama response |
+| `LLM_TEMPERATURE` | No | `0.3` | LLM temperature (0.0–1.0) |
+| `LLM_MAX_TOKENS` | No | `1024` | Max tokens in generated answer |
+| `SYSTEM_PROMPT` | No | built-in | Override the default system prompt |
 | `BOT_NAME` | No | `Mnemo` | Display name in error messages and App Home |
-| `QUERY_TIMEOUT` | No | `120.0` | Seconds to wait for user container response |
+| `QUERY_TIMEOUT` | No | `120.0` | Seconds to wait for Mnemo response |
 | `SHOW_SOURCES` | No | `true` | Append source citations to responses |
 | `SHOW_PROVENANCE` | No | `false` | Append cache hit stats to responses |
 | `TYPING_EMOJI` | No | `hourglass_flowing_sand` | Emoji for thinking indicator |
@@ -134,5 +158,5 @@ mnemo-slack/
     ├── main.py       # FastAPI entrypoint + Slack Bolt setup
     ├── config.py     # pydantic-settings configuration
     ├── bot.py        # Slack event handlers (mention, DM, App Home)
-    └── client.py     # HTTP client for user container /query calls
+    └── client.py     # Mnemo HTTP client + Ollama LLM call + source formatter
 ```
