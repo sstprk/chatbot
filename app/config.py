@@ -12,11 +12,11 @@ class Settings(BaseSettings):
     slack_app_token: str = ""
 
     # ── User Container ───────────────────────────────────────────
-    container_url: str = "http://mnemo-chatbot:8000"
+    container_url: str = "http://belleq-chatbot:8000"
     user_api_key: str = ""
 
     # ── LLM ──────────────────────────────────────────────────────
-    ollama_url: str = "http://mnemo-ollama:11434"
+    ollama_url: str = "http://belleq-ollama:11434"
     # URL of the Ollama instance. Can be any Ollama server —
     # local, remote, or shared with other services.
 
@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # Default system prompt. Can be overridden per request.
 
     # ── Bot behaviour ────────────────────────────────────────────
-    bot_name: str = "Mnemo"
+    bot_name: str = "Belleq"
     query_timeout: float = 120.0
     show_sources: bool = True
     show_provenance: bool = False

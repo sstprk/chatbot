@@ -1,26 +1,26 @@
-# Mnemo Slack Bot
+# Belleq Slack Bot
 
-A Slack chatbot that uses **Mnemo** for knowledge retrieval and its own **Ollama** instance for answer generation. Mnemo returns relevant document chunks; this bot turns them into readable answers.
+A Slack chatbot that uses **Belleq** for knowledge retrieval and its own **Ollama** instance for answer generation. Belleq returns relevant document chunks; this bot turns them into readable answers.
 
 ## Architecture
 
 ```
-Slack  →  mnemo-slack  →  Mnemo user container /query  →  (chunks returned)
+Slack  →  belleq-slack  →  Belleq user container /query  →  (chunks returned)
                        →  Ollama /api/generate          →  (answer generated)
                        →  Slack
 ```
 
 1. Slack message arrives
-2. Raw query is sent to the Mnemo user container (`POST /query`)
-3. Mnemo returns a list of document chunks (no answer — just data)
+2. Raw query is sent to the Belleq user container (`POST /query`)
+3. Belleq returns a list of document chunks (no answer — just data)
 4. This bot builds a prompt from the chunks and calls its local Ollama
 5. Ollama generates a human-readable answer
 6. Answer (+ source citations) is posted back to Slack
 
 ## Prerequisites
 
-- A running **Mnemo user container** (from the `mnemo-container` repo) reachable on the `mnemo-net` Docker network
-- An **Ollama** instance reachable on `mnemo-net` with the target model pulled
+- A running **Belleq user container** (from the `belleq-container` repo) reachable on the `belleq-net` Docker network
+- An **Ollama** instance reachable on `belleq-net` with the target model pulled
 - A **Slack app** configured with the scopes and events listed below
 - An **HTTPS endpoint** (required by Slack Events API) — use Caddy, ngrok, or Socket Mode for dev
 
@@ -50,15 +50,15 @@ Slack  →  mnemo-slack  →  Mnemo user container /query  →  (chunks returned
 
 ```bash
 # 1. Clone
-git clone https://github.com/sstprk/mnemo-slack.git
-cd mnemo-slack
+git clone https://github.com/sstprk/belleq-slack.git
+cd belleq-slack
 
 # 2. Configure
 cp .env.example .env
 # Fill in SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, CONTAINER_URL, OLLAMA_URL
 
 # 3. Pull the LLM model on your Ollama instance
-docker exec mnemo-ollama ollama pull qwen2.5:3b
+docker exec belleq-ollama ollama pull qwen2.5:3b
 
 # 4. Start
 docker compose up -d --build
@@ -84,10 +84,10 @@ docker compose up -d --build
 
 ## Bring Your Own LLM
 
-This chatbot uses Ollama for answer generation. **Mnemo provides the retrieval** — the chunks, the sources, the lifecycle tracking. **This container provides the AI** that turns those chunks into a readable answer.
+This chatbot uses Ollama for answer generation. **Belleq provides the retrieval** — the chunks, the sources, the lifecycle tracking. **This container provides the AI** that turns those chunks into a readable answer.
 
 The two services are fully decoupled:
-- Change `CONTAINER_URL` to point to a different Mnemo user container
+- Change `CONTAINER_URL` to point to a different Belleq user container
 - Change `OLLAMA_URL` and `OLLAMA_MODEL` to use a different model
 
 To use a different LLM provider entirely (OpenAI, Anthropic, etc.), replace the `generate_answer()` function in `app/client.py`. The function signature is:
@@ -96,7 +96,7 @@ To use a different LLM provider entirely (OpenAI, Anthropic, etc.), replace the 
 async def generate_answer(chunks: list[dict], query: str, settings) -> str:
 ```
 
-It receives the raw chunks from Mnemo, the original query string, and the settings object. It must return a plain string.
+It receives the raw chunks from Belleq, the original query string, and the settings object. It must return a plain string.
 
 ## Environment Variables
 
@@ -105,16 +105,16 @@ It receives the raw chunks from Mnemo, the original query string, and the settin
 | `SLACK_BOT_TOKEN` | Yes | — | Bot User OAuth Token (`xoxb-...`) |
 | `SLACK_SIGNING_SECRET` | Yes | — | From Basic Information → App Credentials |
 | `SLACK_APP_TOKEN` | No | `""` | App-Level Token (`xapp-...`) for Socket Mode |
-| `CONTAINER_URL` | No | `http://mnemo-chatbot:8000` | Mnemo user container URL |
-| `USER_API_KEY` | No | `""` | API key sent as `X-Api-Key` to Mnemo |
-| `OLLAMA_URL` | No | `http://mnemo-ollama:11434` | Ollama instance URL |
+| `CONTAINER_URL` | No | `http://belleq-chatbot:8000` | Belleq user container URL |
+| `USER_API_KEY` | No | `""` | API key sent as `X-Api-Key` to Belleq |
+| `OLLAMA_URL` | No | `http://belleq-ollama:11434` | Ollama instance URL |
 | `OLLAMA_MODEL` | No | `qwen2.5:3b` | Model for answer generation |
 | `LLM_TIMEOUT` | No | `120.0` | Seconds to wait for Ollama response |
 | `LLM_TEMPERATURE` | No | `0.3` | LLM temperature (0.0–1.0) |
 | `LLM_MAX_TOKENS` | No | `1024` | Max tokens in generated answer |
 | `SYSTEM_PROMPT` | No | built-in | Override the default system prompt |
-| `BOT_NAME` | No | `Mnemo` | Display name in error messages and App Home |
-| `QUERY_TIMEOUT` | No | `120.0` | Seconds to wait for Mnemo response |
+| `BOT_NAME` | No | `Belleq` | Display name in error messages and App Home |
+| `QUERY_TIMEOUT` | No | `120.0` | Seconds to wait for Belleq response |
 | `SHOW_SOURCES` | No | `true` | Append source citations to responses |
 | `SHOW_PROVENANCE` | No | `false` | Append cache hit stats to responses |
 | `TYPING_EMOJI` | No | `hourglass_flowing_sand` | Emoji for thinking indicator |
@@ -123,9 +123,9 @@ It receives the raw chunks from Mnemo, the original query string, and the settin
 | `APP_PORT` | No | `3000` | FastAPI bind port |
 | `LOG_LEVEL` | No | `INFO` | Python log level |
 
-## Mnemo Master Registry
+## Belleq Master Registry
 
-This container does **not** register itself with the Mnemo master. It is a Slack client, not a knowledge container. The user container it points to is what appears in the registry.
+This container does **not** register itself with the Belleq master. It is a Slack client, not a knowledge container. The user container it points to is what appears in the registry.
 
 ## HTTPS Setup with Caddy
 
@@ -144,7 +144,7 @@ Caddy auto-provisions TLS via Let's Encrypt. If your master container already ru
 ## Project Structure
 
 ```
-mnemo-slack/
+belleq-slack/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── docker-compose.prod.yml
@@ -158,5 +158,5 @@ mnemo-slack/
     ├── main.py       # FastAPI entrypoint + Slack Bolt setup
     ├── config.py     # pydantic-settings configuration
     ├── bot.py        # Slack event handlers (mention, DM, App Home)
-    └── client.py     # Mnemo HTTP client + Ollama LLM call + source formatter
+    └── client.py     # Belleq HTTP client + Ollama LLM call + source formatter
 ```

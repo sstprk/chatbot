@@ -1,15 +1,15 @@
 services:
   slack-bot:
     build: .
-    container_name: mnemo-slack-bot
+    container_name: belleq-slack-bot
     ports:
       - "3000:3000"
     env_file: .env
     networks:
-      - mnemo-net
+      - belleq-net
     restart: on-failure
 
 networks:
-  mnemo-net:
+  belleq-net:
     external: true
-    name: mnemo-net
+    name: belleq-net

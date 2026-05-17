@@ -7,7 +7,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-class MnemoClient:
+class BelleqClient:
 
     def __init__(self, base_url: str, api_key: str = "", timeout: float = 120.0):
         self._url = base_url.rstrip("/")
@@ -28,7 +28,7 @@ class MnemoClient:
     ) -> dict:
         """
         POST {container_url}/query
-        Sends plain text query to Mnemo user container.
+        Sends plain text query to Belleq user container.
         Returns dict with "chunks" list and optional "provenance".
         On any error returns {"error": str, "chunks": []}
         Never raises.
@@ -46,15 +46,15 @@ class MnemoClient:
             r.raise_for_status()
             return r.json()
         except httpx.TimeoutException:
-            logger.error("mnemo_query_timeout url=%s", self._url)
+            logger.error("belleq_query_timeout url=%s", self._url)
             return {"error": "timeout", "chunks": []}
         except httpx.HTTPStatusError as e:
             logger.error(
-                "mnemo_query_http_error status=%d", e.response.status_code
+                "belleq_query_http_error status=%d", e.response.status_code
             )
             return {"error": f"http_{e.response.status_code}", "chunks": []}
         except Exception as e:
-            logger.error("mnemo_query_error error=%s", e)
+            logger.error("belleq_query_error error=%s", e)
             return {"error": str(e), "chunks": []}
 
     async def health(self) -> bool:
@@ -78,7 +78,7 @@ async def generate_answer(
 ) -> str:
     """
     Build a prompt from retrieved chunks and call Ollama to generate
-    an answer. This is the chatbot's own LLM — not part of Mnemo.
+    an answer. This is the chatbot's own LLM — not part of Belleq.
 
     Returns the generated answer string.
     On error returns settings.error_message.

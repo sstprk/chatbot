@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from slack_bolt.adapter.starlette.async_handler import AsyncSlackRequestHandler
 
 from app.bot import build_bolt_app, set_client
-from app.client import MnemoClient
+from app.client import BelleqClient
 from app.config import settings
 
 logging.basicConfig(
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(
-        "Starting %s Slack Bot: mnemo=%s ollama=%s model=%s",
+        "Starting %s Slack Bot: belleq=%s ollama=%s model=%s",
         settings.bot_name,
         settings.container_url,
         settings.ollama_url,
@@ -29,14 +29,14 @@ async def lifespan(app: FastAPI):
 
     bolt_app = build_bolt_app()
 
-    mnemo_client = MnemoClient(
+    belleq_client = BelleqClient(
         base_url=settings.container_url,
         api_key=settings.user_api_key,
         timeout=settings.query_timeout,
     )
-    set_client(mnemo_client)
+    set_client(belleq_client)
 
-    reachable = await mnemo_client.health()
+    reachable = await belleq_client.health()
     if reachable:
         logger.info("user_container_reachable url=%s", settings.container_url)
     else:
@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
 
     app.state.bolt = bolt_app
     app.state.handler = AsyncSlackRequestHandler(bolt_app)
-    app.state.mnemo_client = mnemo_client
+    app.state.belleq_client = belleq_client
 
     logger.info(
         "%s Slack Bot ready: port=%d",
@@ -56,15 +56,15 @@ async def lifespan(app: FastAPI):
     )
     yield
 
-    await mnemo_client.close()
+    await belleq_client.close()
     logger.info("%s Slack Bot shut down", settings.bot_name)
 
 
 app = FastAPI(
-    title="Mnemo Slack Bot",
+    title="Belleq Slack Bot",
     description=(
-        "Slack chatbot that uses Mnemo for retrieval and a local Ollama LLM "
-        "for answer generation. Mnemo returns document chunks; this service "
+        "Slack chatbot that uses Belleq for retrieval and a local Ollama LLM "
+        "for answer generation. Belleq returns document chunks; this service "
         "turns them into human-readable answers."
     ),
     version="0.2.0",
@@ -87,7 +87,7 @@ async def slack_interactions(request: Request):
 @app.get("/health")
 async def health(request: Request):
     """Liveness check. Reports user container reachability."""
-    reachable = await request.app.state.mnemo_client.health()
+    reachable = await request.app.state.belleq_client.health()
     return {
         "status": "ok",
         "container_url": settings.container_url,

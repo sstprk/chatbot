@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from slack_bolt.async_app import AsyncApp
 
-from app.client import MnemoClient, format_sources, generate_answer
+from app.client import BelleqClient, format_sources, generate_answer
 from app.config import settings
 
 if TYPE_CHECKING:
@@ -14,10 +14,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_client: MnemoClient | None = None
+_client: BelleqClient | None = None
 
 
-def set_client(client: MnemoClient) -> None:
+def set_client(client: BelleqClient) -> None:
     global _client
     _client = client
 

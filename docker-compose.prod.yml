@@ -4,7 +4,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    container_name: mnemo-slack-caddy
+    container_name: belleq-slack-caddy
     ports:
       - "80:80"
       - "443:443"
@@ -14,7 +14,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     networks:
-      - mnemo-net
+      - belleq-net
     restart: always
 
 volumes:
